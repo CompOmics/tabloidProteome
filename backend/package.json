@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "graphology-layout": "^0.6.1"
+  }
+}
