@@ -1,0 +1,9 @@
+services:
+  web_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: web_app
+    restart: always
+    ports:
+      - 5600:5600

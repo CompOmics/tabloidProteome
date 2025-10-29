@@ -1,23 +1,60 @@
 <script setup>
+import { ref } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 // import HelloWorld from './components/HelloWorld.vue'
+const drawer = ref(false)
 </script>
 
 <template lang="pug">
 v-app
-    v-app-bar
-      nav
-        RouterLink(to="/") Home
-        RouterLink(to="/about") About
+    v-container(fluid)
+        v-toolbar.toolbar(density="compact")
+            template(
+                v-slot:prepend
+            )
+                a(href="/")
+                    img.logo(
+                        src="./assets/logo.png"
+                    ) 
+            template(
+                v-slot:append
+            )
+                .d-flex.ga-1
+                    v-btn(
+                        icon="mdi-menu"
+                        @click.stop="drawer = !drawer"
+                    )
+            //- v-app-bar-nav-icon(variant="image") 
+            //- v-btn(
+            //-   icon="mdi-menu"
+            //-   @click.stop="drawer = !drawer"
+            //- )
+        v-navigation-drawer(
+            v-model="drawer"
+            location="right"
+            temporary
+        )
+            v-btn(
+                icon="mdi-close"
+                @click.stop="drawer = !drawer"
+            )
+            v-list-item(title="About")
+            v-list-item(title="Privacy")
     RouterView
 </template>
 
 <style scoped>
-.logo {
-  display: block;
-  margin: 0 auto 2rem;
+.toolbar {
+  background-color: white;
 }
-
+.logo {
+  padding-top: 20px;
+  width: 80px;
+  height: 80px;
+}
+.v-navigation-drawer.v-navigaion-drawer--active {
+    top: 25px !important;
+}
 nav {
   width: 100%;
   font-size: 12px;
@@ -47,7 +84,6 @@ nav a:first-of-type {
   header {
     display: flex;
     place-items: center;
-    padding-right: calc(var(--section-gap) / 2);
   }
 
   .logo {

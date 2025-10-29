@@ -10,7 +10,7 @@ router = APIRouter()
 @router.get('/get-data-edges', status_code = status.HTTP_200_OK)
 def getDataEdges():
     # file_path = os.path.join(local_dir, '../../../data/corrs-w-pval.csv')
-    file_path = os.path.join(local_dir, '../../../data/corrs-w-pval.csv')
+    file_path = os.path.join(local_dir, '../../data/corrs-w-pval.csv')
     # accession node a | accession node b| score | pval | adj_pval
     dataEdges = []
     with open(file_path) as f:
@@ -18,7 +18,6 @@ def getDataEdges():
             csvFile = csv.reader(f)
             for row in csvFile:
                  dataEdges.append(row)
-            # dataList = csvFile
         except json.JSONDecodeError:
                 raise HTTPException(status_code=500, detail=f"Error reading file")
     dataNodes = getDataNodes()
@@ -26,13 +25,30 @@ def getDataEdges():
 @router.get('/get-data-nodes', status_code = status.HTTP_200_OK)
 def getDataNodes():
     dataList = []
-    file_path = os.path.join(local_dir, '../../../data/modifications_list.csv')
-    # ptm ID | gene | position | residue | modification id | red_mod
+    file_path = os.path.join(local_dir, '../../data/modifications_list.csv')
+    # unimod_id | code_name | full_name | avg_mass | mono_mass | composition | residue | classification | misc_notes_x | misc_notes_y
     with open(file_path) as f:
         try:
             csvFile = csv.reader(f)
             for row in csvFile:
                  dataList.append(row)
+            # dataList = csvFile
+        except json.JSONDecodeError:
+                raise HTTPException(status_code=500, detail=f"Error reading file")
+    return dataList
+@router.get('/get-data-modifications', status_code = status.HTTP_200_OK)
+def getDataModifications():
+    dataList = []
+    unimodIdList = []
+    file_path = os.path.join(local_dir, '../../data/Unimod_database.csv')
+    # unimod_id | code_name | full_name | avg_mass | mono_mass | composition | residue | classification | misc_notes_x | misc_notes_y
+    with open(file_path) as f:
+        try:
+            csvFile = csv.reader(f)
+            for row in csvFile:
+                if row[0] not in unimodIdList:
+                    dataList.append(row)
+                    unimodIdList.append(row[0])
             # dataList = csvFile
         except json.JSONDecodeError:
                 raise HTTPException(status_code=500, detail=f"Error reading file")

@@ -30,6 +30,13 @@ export default defineConfig({
         // secure: false,
         rewrite: (path) => path.replace(/^\/api/, '')
       },
+      "/ws": {
+        target: "ws://localhost:5600",
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+      },
     },
+    port: 5180,
   }
 })
