@@ -38,6 +38,8 @@ const state = reactive({
 const filterState = reactive({
     modifications: modificationsVmodel,
     proteins: proteinNameModel,
+    residues: residuesVmodel,
+    positions: positionsVmodel,
     pval: pval, 
     score: score
 })
@@ -45,43 +47,63 @@ const graph = new Graph()
 
 watch(filterState, 
     (newValue, oldValue) => {
+        const {modifications, proteins, residues, positions, pval, score} = filterState
         console.log('filterState changed')
-        console.log('newVAl', newValue)
-        console.log('oldVAl', oldValue)
-        const {modifications, proteins, pval, score} = filterState
-        console.log('modifications', modifications)
-        console.log('prots', proteins)
-        console.log('score', score)
-        console.log('score old', oldValue.score)
+
         if(modifications.length > 0 || proteins.length > 0) {
-            if(modifications.length > 0 && proteins.length == 0) {
-                console.log('*')
-                graph.forEachNode((node, {modification, protein}) => {
+            if(modifications.length > 0 && proteins.length == 0){
+                 graph.forEachNode((node, {modification}) => {
+                    // console.log(graph.getNodeAttributes(node))
                     graph.setNodeAttribute(node, 'hidden', !modifications.includes(modification))
                 })
-            } else if (modifications.length > 0 && proteins.length > 0) {
-                console.log('**')
+            } else if (modifications.length > 0 && proteins.length > 0){
                 graph.forEachNode((node, {modification, protein}) => {
+                    // console.log(graph.getNodeAttributes(node))
                     graph.setNodeAttribute(node, 'hidden', !modifications.includes(modification) || !proteins.includes(protein))
-                })
-            } else if(modifications.length == 0 && proteins.length > 0) {
-                console.log('***')
-                graph.forEachNode((node, {modification, protein}) => {
+                }) 
+            } else if (modifications.length == 0 && proteins.length > 0) {
+                graph.forEachNode((node, {protein}) => {
+                    // console.log(graph.getNodeAttributes(node))
                     graph.setNodeAttribute(node, 'hidden', !proteins.includes(protein))
-                })
+                }) 
             }
+            // } else if(modifications.length > 0 || proteins.length > 0 || residues.length > 0 || positions.length > 0) {
+            //     graph.forEachNode((node, {modification, protein, residue, position}) => {
+            //         console.log(graph.getNodeAttributes(node))
+            //         graph.setNodeAttribute(node, 'hidden', !modifications.includes(modification) || !proteins.includes(protein) || !residues.includes(residue) || !positions.includes(position))
+            //     })
+            // } else if(modifications.length > 0 || proteins.length > 0 || residues.length > 0) {
+            //     graph.forEachNode((node, {modification, protein, residue, position}) => {
+            //         graph.setNodeAttribute(node, 'hidden', !modifications.includes(modification) || !proteins.includes(protein) || !positions.includes(position))
+            //     })
+            // }
         } else {
             resetGraph()
         }
-        if(pval !== null && pval != oldValue.pval.value) {
-            updateGraphByPval()
-        }
+        // if(pval !== null && pval != oldValue.pval.value) {
+        //     updateGraphByPval()
+        // }
         if(score != oldValue.score.value) {
             updateGraphByScore(score)
         }
+        renderer.value.refresh({
+            // We don't touch the graph data so we can skip its reindexation
+            skipIndexation: true,
+        });
     }
 )
-
+const isNodeVisible = () => {
+    let boolArray = []
+    const {modifications, proteins, residues, positions, pval, score} = filterState
+    for (const [key, value] of Object.entries(filterState)) {
+        if(key !== 'pval' && k !== 'score'){
+            if(value.length > 0) {
+                boolArray.push(true)
+            }
+        }
+    }
+    console.log(boolArray)
+}
 watch(
     state,
     (newValue, oldValue) => {
@@ -133,7 +155,7 @@ watch(
                 console.log('hoveredEdge')
                 res.color = "#054cb7"
                 res.size = 4
-                res.label = data.score + ', ' + data.pval
+                res.label = data.score
             }
             return res;
         })
@@ -163,40 +185,6 @@ const updateGraphByFilters = () => {
     // console.log('filterType', filterType)
     updateGraphByModification()
     updateGraphByProteinName()
-    // console.log(filterState[filterType])
-    // if(modificationsVmodel.value.length > 0 && proteinNameModel.value.length == 0) {
-    //     graph.forEachNode((node, {modification}) => {
-    //         console.log(graph)
-    //         let nodeAttributes = graph.getNodeAttributes(node)
-    //         console.log(nodeAttributes)
-    //         //console.log(!modificationsVmodel.value[modification], !proteinNameModel.value[protein])
-            
-    //         //console.log(!modificationsVmodel.value[modification] || !proteinNameModel.value[protein])
-    //         graph.setNodeAttribute(node, 'hidden', !modificationsVmodel.value.includes(modification))
-    //         let nodeHidden = graph.getNodeAttribute(node, 'hidden')
-    //         console.log('hidden', nodeHidden)
-    //     })
-    // } else if(modificationsVmodel.value.length > 0  && proteinNameModel.value.length > 0) {
-    //     graph.forEachNode((node, {modification, protein}) => {
-    //         //console.log(!modificationsVmodel.value[modification], !proteinNameModel.value[protein])
-            
-    //         //console.log(!modificationsVmodel.value[modification] || !proteinNameModel.value[protein])
-    //         graph.setNodeAttribute(node, 'hidden', 
-    //             (!modificationsVmodel.value.includes(modification) || !proteinNameModel.value.includes(protein))
-    //         )
-    //     })
-    // }
-    // else {
-    //     resetGraph()
-    // }
-    // graph.forEachNode((node, {modification, protein}) => {
-    //     console.log(!modificationsVmodel.value[modification], !proteinNameModel.value[protein])
-        
-    //     console.log(!modificationsVmodel.value[modification] || !proteinNameModel.value[protein])
-    //     graph.setNodeAttribute(node, 'hidden', 
-    //         (!modificationsVmodel.value[modification] || !proteinNameModel.value[protein])
-    //     )
-    // })
     renderer.value.refresh({
         // We don't touch the graph data so we can skip its reindexation
         skipIndexation: true,
@@ -230,7 +218,7 @@ const setGraph = () => {
     );
     // Bind graph interactions:
     renderer.value.on("enterNode", ({ node }) => {
-        console.log('enterNode')
+        // console.log('enterNode')
         setHoveredNode(node);
     });
     renderer.value.on("leaveNode", () => {
@@ -241,7 +229,7 @@ const setGraph = () => {
     })
 
     renderer.value.on("enterEdge", ({ edge }) => {
-        console.log('enterEdge',)
+        // console.log('enterEdge',)
         hoveredEdge.value = edge
         renderer.value.refresh()
     });
@@ -274,13 +262,6 @@ const setGraph = () => {
             res.zIndex = 1,
             res.label=''
         }
-        // if (edge == hoveredEdge.value) {
-        //     console.log('hoveredEdge')
-        //     res.color = "#054cb7"
-        //     res.size = 4
-        //     res.label = data.score + ', ' + data.pval
-        // }
-
         return res;
     })
     filterState.score = score.value
@@ -435,13 +416,13 @@ const getMouseLayer = () => {
 const addDataToGraph = () => {
     dataNodes.value.forEach((line, index) => {
         if(index > 0) {
-            graph.addNode(line[0], {size: 10, label: line[0], protein: line[1], modification: line[4], position: line[2], residue: line[3]})
+            graph.addNode(line[0], {size: 10, label: line[0], protein: line[1], modification: line[5], position: line[3], residue: line[4]})
         }
     });
 
     dataEdges.value.forEach((line, index) => {
         if(index > 0) {
-            graph.addEdge(line[0], line[1], {type: 'line', label: '', color: '#cccccc', weight: 1, score: Number.parseFloat(line[2]), pval: Number.parseFloat(line[4])})
+            graph.addEdge(line[0], line[1], {type: 'line', label: '', color: '#cccccc', weight: 1, score: Number.parseFloat(line[2])})
         }
     })
     const degrees = graph.nodes().map((node) => graph.degree(node))
@@ -514,8 +495,8 @@ const setModifications = async() => {
     // console.log('setModifications', dataNodes.value)
     dataNodes.value.forEach( (row, index) => {
         if(index > 0) {
-            if(!modifications.value.includes(row[4])){
-                modifications.value.push(row[4])
+            if(!modifications.value.includes(row[5])){
+                modifications.value.push(row[5])
             }
         }
     })
@@ -544,7 +525,7 @@ const compareNumbers = (a, b) => {
 v-row
     .v-col-9
         div(id="loader")
-            .loader
+            p Creating network
         div(id="sigma-network")
     //- div(ref="container")
     .v-col-3
@@ -578,23 +559,23 @@ v-row
                         hide-details
                         single-line
                    )
-        div
-            h5 PVal
-            v-radio-group(
-                v-model="pval"
-            )
-                v-radio(
-                    value="0.05"
-                    label="< 0.05"
-                )
-                v-radio(
-                    value="0.01"
-                    label="< 0.01"
-                )
-                v-radio(
-                    value="0.001"
-                    label="< 0.001"
-                )
+        //- div
+        //-     h5 PVal
+        //-     v-radio-group(
+        //-         v-model="pval"
+        //-     )
+        //-         v-radio(
+        //-             value="0.05"
+        //-             label="< 0.05"
+        //-         )
+        //-         v-radio(
+        //-             value="0.01"
+        //-             label="< 0.01"
+        //-         )
+        //-         v-radio(
+        //-             value="0.001"
+        //-             label="< 0.001"
+        //-         )
         div
             h5 Gene/Protein name
             v-autocomplete(
@@ -604,7 +585,6 @@ v-row
                 chips
                 v-model="proteinNameModel"
                 :items="proteins"
-                
             )
             //- @update:modelValue="updateGraphByFilters"
         v-expansion-panels
@@ -617,49 +597,41 @@ v-row
                             v-checkbox(
                                 v-model="modificationsVmodel"
                                 :value="item[0]"
-                                
                             )
                                 //- @update:modelValue="updateGraphByFilters"
                                 template(
                                     v-slot:label
                                 )
                                     | {{ item[0] }} {{item[1]}} {{item[3] }}
-            v-expansion-panel
-                v-expansion-panel-title(collapse-icon="mdi-minus" expand-icon="mdi-plus")
-                    | Positions
-                v-expansion-panel-text.extension-panel
-                    v-autocomplete(
-                        clearable
-                        closable-chips
-                        chips
-                        v-model="positionsVmodel"
-                        :items="positions"
-                        multiple
-                        @update:modelValue="updateGraphByPosition"
-                    )
-            v-expansion-panel
-                v-expansion-panel-title(collapse-icon="mdi-minus" expand-icon="mdi-plus")
-                    | Residues
-                v-expansion-panel-text.extension-panel
-                    v-list
-                        v-list-item(v-for="item in residues" :key="item")
-                            v-checkbox(
-                                v-model="residuesVmodel"
-                                :value="item"
-                                @update:modelValue="updateGraphByResidue"
-                            )
-                                template(
-                                    v-slot:label
-                                )
-                                    | {{ item }}
-                
+            //- v-expansion-panel
+            //-     v-expansion-panel-title(collapse-icon="mdi-minus" expand-icon="mdi-plus")
+            //-         | Positions
+            //-     v-expansion-panel-text.extension-panel
+            //-         v-autocomplete(
+            //-             clearable
+            //-             closable-chips
+            //-             chips
+            //-             v-model="positionsVmodel"
+            //-             :items="positions"
+            //-             multiple
+            //-             @update:modelValue="updateGraphByPosition"
+            //-         )
+            //- v-expansion-panel
+            //-     v-expansion-panel-title(collapse-icon="mdi-minus" expand-icon="mdi-plus")
+            //-         | Residues
+            //-     v-expansion-panel-text.extension-panel
+            //-         v-list
+            //-             v-list-item(v-for="item in residues" :key="item")
+            //-                 v-checkbox(
+            //-                     v-model="residuesVmodel"
+            //-                     :value="item"
+            //-                     @update:modelValue="updateGraphByResidue"
+            //-                 )
+            //-                     template(
+            //-                         v-slot:label
+            //-                     )
+            //-                         | {{ item }}
         //- | {{ modificationsVmodel }}
-
-                    
-                        
-
-
-    
 </template>
 
 <style lang="scss" scoped>

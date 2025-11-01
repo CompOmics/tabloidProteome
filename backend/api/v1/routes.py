@@ -10,7 +10,7 @@ router = APIRouter()
 @router.get('/get-data-edges', status_code = status.HTTP_200_OK)
 def getDataEdges():
     # file_path = os.path.join(local_dir, '../../../data/corrs-w-pval.csv')
-    file_path = os.path.join(local_dir, '../../data/corrs-w-pval.csv')
+    file_path = os.path.join(local_dir, '../../data/edges_list.csv')
     # accession node a | accession node b| score | pval | adj_pval
     dataEdges = []
     with open(file_path) as f:
@@ -25,7 +25,7 @@ def getDataEdges():
 @router.get('/get-data-nodes', status_code = status.HTTP_200_OK)
 def getDataNodes():
     dataList = []
-    file_path = os.path.join(local_dir, '../../data/modifications_list.csv')
+    file_path = os.path.join(local_dir, '../../data/modifications_list_1.csv')
     # unimod_id | code_name | full_name | avg_mass | mono_mass | composition | residue | classification | misc_notes_x | misc_notes_y
     with open(file_path) as f:
         try:
