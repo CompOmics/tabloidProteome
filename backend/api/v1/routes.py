@@ -2,10 +2,49 @@ import json
 import csv
 import os
 from fastapi import APIRouter, Depends, status, HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session, aliased
+from schemas import Edge, Node, UnimodEntry, UnimodDistinct
+from models import EdgeModel, NodeModel, UnimodModel
+from config import get_db
 
 local_dir = os.path.dirname(__file__)
 print(local_dir)
 router = APIRouter()
+
+@router.get('/get-edges', status_code = status.HTTP_200_OK)
+def getEdges(db: Session = Depends(get_db)) -> list[Edge]:
+    node_a = aliased(NodeModel)
+    node_b = aliased(NodeModel)
+    stmt = select(
+         EdgeModel.score,
+         EdgeModel.l_node_a_id,
+         EdgeModel.l_node_b_id,
+         node_a.composite_name.label('node_a'),
+         node_b.composite_name.label('node_b')
+    ).join(node_a, EdgeModel.l_node_a_id == node_a.id
+    ).join(node_b, EdgeModel.l_node_b_id == node_b.id)
+    edges = db.execute(stmt).all()
+    return edges
+
+@router.get('/get-nodes', status_code = status.HTTP_200_OK)
+def getNodes(db: Session = Depends(get_db)) -> list[Node]:
+    nodes = db.scalars(select(NodeModel)).all()
+    return nodes
+
+@router.get('/get-unimod', status_code = status.HTTP_200_OK)
+def getUnimod(db: Session = Depends(get_db)) -> list[UnimodDistinct]:
+    stmt = select(NodeModel.l_unimod_id,
+        UnimodModel.unimod_id,
+        UnimodModel.full_name,
+        UnimodModel.avg_mass,
+        UnimodModel.classification
+    ).join(UnimodModel, NodeModel.l_unimod_id == UnimodModel.id
+    ).distinct()
+    unimod = db.execute(stmt).all()
+    return unimod
+    # nodes = db.scalars(select(NodeModel)).all()
+    # return nodes
 
 @router.get('/get-data-edges', status_code = status.HTTP_200_OK)
 def getDataEdges():

@@ -1,5 +1,8 @@
 tabloid-proteome-modpa
 __pycache__
+.env
+.vite
+.github
 
 # Logs
 logs
@@ -16,6 +19,7 @@ dist
 dist-ssr
 coverage
 *.local
+docker-compose-db.yml
 
 /cypress/videos/
 /cypress/screenshots/

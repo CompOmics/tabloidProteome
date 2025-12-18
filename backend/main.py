@@ -18,10 +18,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/api")
+@app.get("/tabloidproteome/api")
 def home():
     return "Hello, World!"
-app.include_router(api_v1_router, prefix="/api/v1")
+app.include_router(api_v1_router, prefix="/tabloidproteome/api/v1")
 
 # Websocket endpoint
 @app.websocket("/ws")
@@ -48,7 +48,7 @@ try:
     app.mount("/assets", StaticFiles(directory=build_dir / "assets"), name="assets")
 
     # Catch-all route for SPA
-    @app.get("/{catchall:path}")
+    @app.get("/tabloidproteome/{catchall:path}")
     async def serve_spa(catchall: str):
         # If the requested file exists, serve it, else serve index.html
         path = build_dir / catchall

@@ -6,6 +6,7 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: '/tabloidproteome/',
   plugins: [
     vue(),
     vueDevTools(),
@@ -24,11 +25,11 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api": {
+      "/tabloidproteome/api": {
         target: "http://localhost:5600",
         changeOrigin: true,
         // secure: false,
-        rewrite: (path) => path.replace(/^\/api/, '')
+        rewrite: (path) => path.replace(/^\/tabloidproteome\/api/, '')
       },
       "/ws": {
         target: "ws://localhost:5600",

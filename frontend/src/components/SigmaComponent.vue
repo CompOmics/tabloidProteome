@@ -1,14 +1,23 @@
-<script setup>
-import { useTemplateRef, ref, reactive, watch, watchEffect, onMounted, onBeforeMount } from 'vue'
-import Graph from "graphology";
-import Sigma from "sigma";
-import forceAtlas2 from "graphology-layout-forceatlas2";
-import circular from "graphology-layout/circular";
-import ForceSupervisor from "graphology-layout-force/worker";
-import noverlap from 'graphology-layout-noverlap';
+<script setup lang="ts">
+import { useTemplateRef, ref, reactive, watch, watchEffect, onMounted, onBeforeMount, render } from 'vue'
+import Graph from "graphology"
+import type { Attributes } from "graphology-types" // gives error ReferenceError: AbstractGraph is not defined
+import Sigma from "sigma"
+import type { EdgeDisplayData, NodeDisplayData } from "sigma/types" // check vite for typescript config because all types give errors
+import { downloadAsImage } from '@sigma/export-image'
+import forceAtlas2 from "graphology-layout-forceatlas2"
+import circular from "graphology-layout/circular"
+import type { Node, Edge, Unimod } from '../types'
+import { useDebounce } from '../use-debounce'
 
-const baseApiUrl = 'http://localhost:5600/api/v1/'
+//TODO setup properly env vars to use for dev and prod
+const env = import.meta.env.MODE
 
+const baseApiUrl = env === 'development' ? 'http://localhost:5600/tabloidproteome/api/v1/' : '/tabloidproteome/api/v1/'
+
+const sigmaContainer = useTemplateRef<HTMLInputElement>('sigma-container')
+const loader = useTemplateRef<HTMLInputElement>('loader')
+const showLoader = ref(true)
 const dataEdges = ref(null)
 const dataNodes = ref(null)
 const dataUnimod = ref(null)
@@ -24,11 +33,14 @@ const residuesVmodel = ref([])
 const proteinNameModel = ref([])
 const pval = ref(null)
 const hoveredEdge = ref(null)
+const selectedData = ref(null)
 const state = reactive({
     hoveredNode: null,
-    hoveredNeighbors: null,
-    selectedNode: null
+    // hoveredNeighbors: null,
+    selectedNode: null,
+    selectedNodeNeighbors: null
 })
+const debouncedHoveredNode = ref(null)
 // const filterState = reactive({
 //     modifications: [],
 //     score: null,
@@ -45,45 +57,34 @@ const filterState = reactive({
 })
 const graph = new Graph()
 
+onBeforeMount(async () => {
+    await getDataEdges()
+    await getDataNodes()
+    await getDataModifications()
+    setFiltersAttributes()
+})
+
 watch(filterState, 
     (newValue, oldValue) => {
         const {modifications, proteins, residues, positions, pval, score} = filterState
-        console.log('filterState changed')
-
         if(modifications.length > 0 || proteins.length > 0) {
             if(modifications.length > 0 && proteins.length == 0){
                  graph.forEachNode((node, {modification}) => {
-                    // console.log(graph.getNodeAttributes(node))
                     graph.setNodeAttribute(node, 'hidden', !modifications.includes(modification))
                 })
             } else if (modifications.length > 0 && proteins.length > 0){
                 graph.forEachNode((node, {modification, protein}) => {
-                    // console.log(graph.getNodeAttributes(node))
                     graph.setNodeAttribute(node, 'hidden', !modifications.includes(modification) || !proteins.includes(protein))
                 }) 
             } else if (modifications.length == 0 && proteins.length > 0) {
                 graph.forEachNode((node, {protein}) => {
-                    // console.log(graph.getNodeAttributes(node))
                     graph.setNodeAttribute(node, 'hidden', !proteins.includes(protein))
                 }) 
             }
-            // } else if(modifications.length > 0 || proteins.length > 0 || residues.length > 0 || positions.length > 0) {
-            //     graph.forEachNode((node, {modification, protein, residue, position}) => {
-            //         console.log(graph.getNodeAttributes(node))
-            //         graph.setNodeAttribute(node, 'hidden', !modifications.includes(modification) || !proteins.includes(protein) || !residues.includes(residue) || !positions.includes(position))
-            //     })
-            // } else if(modifications.length > 0 || proteins.length > 0 || residues.length > 0) {
-            //     graph.forEachNode((node, {modification, protein, residue, position}) => {
-            //         graph.setNodeAttribute(node, 'hidden', !modifications.includes(modification) || !proteins.includes(protein) || !positions.includes(position))
-            //     })
-            // }
         } else {
             resetGraph()
         }
-        // if(pval !== null && pval != oldValue.pval.value) {
-        //     updateGraphByPval()
-        // }
-        if(score != oldValue.score.value) {
+        if(score != oldValue.score) {
             updateGraphByScore(score)
         }
         renderer.value.refresh({
@@ -96,63 +97,71 @@ const isNodeVisible = () => {
     let boolArray = []
     const {modifications, proteins, residues, positions, pval, score} = filterState
     for (const [key, value] of Object.entries(filterState)) {
-        if(key !== 'pval' && k !== 'score'){
+        if(key !== 'pval' && key !== 'score'){
             if(value.length > 0) {
                 boolArray.push(true)
             }
         }
     }
-    console.log(boolArray)
 }
 watch(
     state,
     (newValue, oldValue) => {
-    console.log('state changed')
-    console.log(newValue)
-    console.log(state.hoveredNode)
-    if(state.hoveredNode !== undefined) {
-        console.log('hoveredNode', state.hoveredNode)
-        renderer.value.setSetting('nodeReducer', (node, data) => {
-            const res = {...data}
-            if(state.hoveredNeighbors && !state.hoveredNeighbors.has(node) && state.hoveredNode !== node){
-                res.label = ''
-                res.color = '#f6f6f6'
-                res.zIndex = 0
-            }
-            if(state.selectedNode === node) {
-                console.log('selected')
-                res.highlighted = true
-            } 
-            return res
-        })
-        renderer.value.setSetting('edgeReducer', (edge, data) => {
-            // console.log(edge)
-            const res = {...data}
-            if(state.hoveredNode && !graph.extremities(edge).every((n) => n === state.hoveredNode || graph.areNeighbors(n, state.hoveredNode))) {
-                res.hidden =true
-            } else if (graph.hasExtremity(edge, state.hoveredNode)) {
-                console.log('set edges to color')
-                res.color = "#990000"
-                res.size = 4
-                res.zIndex = 1
-            }
-            return res
-        })
-        renderer.value.refresh({
-            // We don't touch the graph data so we can skip its reindexation
-            skipIndexation: true,
-        });
+        if(state.hoveredNode !== undefined && state.hoveredNode !== null) {
+            debouncedHoveredNode.value = useDebounce(state.hoveredNode, 40);
+            renderer.value.setSetting('nodeReducer', (node: string, data: Attributes) => {
+                if(debouncedHoveredNode.value) {
+                    const res = { ...data }
+                    if(debouncedHoveredNode.value === node) {
+                        res.highlighted = true
+                    } 
+                    return res
+                }
+            })
+            renderer.value.refresh({
+                // We don't touch the graph data so we can skip its reindexation
+                skipIndexation: true,
+            });
+        } 
+        if(state.selectedNode !== null) {
+            renderer.value.setSetting('nodeReducer', (node: string, data: Attributes) => {
+                const res = {...data}
+                if(state.selectedNodeNeighbors && !state.selectedNodeNeighbors.has(node) && state.hoveredNode !== node){
+                    res.label = ''
+                    res.color = '#f6f6f6'
+                    res.zIndex = 0
+                }
+                if(state.selectedNode === node) {
+                    res.label = data.label
+                    res.color = '#ff8300'
+                    res.highlighted = true
+                } 
+                return res
+            })
+            renderer.value.setSetting('edgeReducer', (edge: string, data: Attributes) => {
+                const res = {...data}
+                if(state.selectedNode && !graph.extremities(edge).every((n) => n === state.selectedNode || graph.areNeighbors(n, state.selectedNode))) {
+                    res.hidden =true
+                } else if (graph.hasExtremity(edge, state.selectedNode)) {
+                    res.color = "#990000"
+                    res.size = 4
+                    res.zIndex = 1
+                }
+                return res
+            })
+            renderer.value.refresh({
+                // We don't touch the graph data so we can skip its reindexation
+                skipIndexation: true,
+            });
+        }
     }
-})
+)
 watch(
     () => hoveredEdge.value,
     () => {
-        console.log('hoveredEdge changed')
-        renderer.value.setSetting('edgeReducer', (edge, data) => {
-            const res = {...data}
-
+        renderer.value.setSetting('edgeReducer', (edge: EdgeDisplayData, data: Attributes) => {
+            const res = { ...data }
             if (edge == hoveredEdge.value) {
-                console.log('hoveredEdge')
                 res.color = "#054cb7"
                 res.size = 4
                 res.label = data.score
@@ -166,23 +175,15 @@ watch(
     }
 )
 watch(
-    () => dataNodes.value,
+    () => dataUnimod.value,
     () => {
         setModifications()
-        // setPositions()
-        // setResidues()
-        setFiltersAttributes()
         addDataToGraph()
-        console.log('data changed')
         setGraph()
     }
 )
 
 const updateGraphByFilters = () => {
-
-    console.log('modsVmodel', modificationsVmodel.value)
-    console.log('proteinNameModel.value', proteinNameModel.value)
-    // console.log('filterType', filterType)
     updateGraphByModification()
     updateGraphByProteinName()
     renderer.value.refresh({
@@ -190,29 +191,22 @@ const updateGraphByFilters = () => {
         skipIndexation: true,
     });
 }
-onBeforeMount(async () => {
-  console.log('onBeforeMount')
-  await getDataEdges()
-})
-onMounted(() => {
-    console.log('onMounted')
-
-})
 const setGraph = () => {
-    const containerHtml = document.getElementById("sigma-network")
     circular.assign(graph);
     const settings = forceAtlas2.inferSettings(graph)
-    forceAtlas2.assign(graph, { settings, iterations: 600 })
-
-    const loader = document.getElementById("loader")
-    loader.style.display = "none"
-    
+    forceAtlas2.assign(graph, { settings, iterations: 100 })
+    showLoader.value = false
     renderer.value = new Sigma(
         graph,
-        containerHtml, 
+        sigmaContainer.value,
         {
+            renderEdgeLabels: false,
+            // renderLabels: false,        // get node count to not show node labels if node nb > 5000
             enableEdgeEvents: true,
-            renderEdgeLabels: true,
+            defaultEdgeType: "line",
+            hideEdgesOnMove: true,      // Critical for graphs with >1000 edges
+            hideLabelsOnMove: true,     // Reduces text rendering during movement
+            defaultNodeType: "circle",
             zIndex: true
         }
     );
@@ -222,12 +216,16 @@ const setGraph = () => {
         setHoveredNode(node);
     });
     renderer.value.on("leaveNode", () => {
+        // console.log('leaveNode')
+        if(state.selectedNode) {
+            return
+        }
         setHoveredNode(undefined)
     })
     renderer.value.on("clickNode", ({node}) => {
-        console.log('clickNode')
+        // console.log('clickNode')
+        setClickedNode(node)
     })
-
     renderer.value.on("enterEdge", ({ edge }) => {
         // console.log('enterEdge',)
         hoveredEdge.value = edge
@@ -237,26 +235,28 @@ const setGraph = () => {
         hoveredEdge.value = null
         renderer.value.refresh()
     });
-    renderer.value.setSetting('nodeReducer', (node, data) => {
-        const res = {...data}
-        //if(state.value.hoveredNeighbors && !state.value.hoveredNeighbors.has(node) && state.value.hoveredNode !== node){
-        if(state.hoveredNeighbors && !state.hoveredNeighbors.has(node) && state.hoveredNode !== node){
-            res.label = ''
-            res.color = '#f6f6f6'
+    renderer.value.setSetting('nodeReducer', (node: NodeDisplayData, data: Attributes) => {
+        const res = { ...data }
+        if(state.selectedNodeNeighbors && !state.selectedNodeNeighbors.has(node) && state.selectedNode !== node){
+            // res.label = ''
+            res.color = '#0598bc'
             res.zIndex = 0
+            res.highlighted = false
         }
-        if(state.selectedNode === node) {
-            console.log('selected')
+        if(state.hoveredNode === node) {
             res.highlighted = true
+        } 
+        if(state.selectedNode !== null || state.selectedNode === node) {
+            res.highlighted = true
+            res.color = '#0598bc'
         } 
         return res
     })
-    renderer.value.setSetting('edgeReducer', (edge, data) => {
-        const res = {...data}
-        if(state.hoveredNode && !graph.extremities(edge).every((n) => n === state.hoveredNode || graph.areNeighbors(n, state.hoveredNode))) {
+    renderer.value.setSetting('edgeReducer', (edge: EdgeDisplayData, data: Attributes) => {
+        const res = { ...data }
+        if(state.selectedNode && !graph.extremities(edge).every((n) => n === state.selectedNode || graph.areNeighbors(n, state.selectedNode))) {
             res.hidden =true
-        } else if (graph.hasExtremity(edge, state.hoveredNode)) {
-            console.log('set edges to color')
+        } else if (graph.hasExtremity(edge, state.selectedNode)) {
             res.color = "#990000"
             res.size = 4
             res.zIndex = 1,
@@ -268,25 +268,22 @@ const setGraph = () => {
     updateGraphByScore(score.value)
 
 }
-const setHoveredNode = (node) => {
-    console.log('setHoveredNode')
+const setClickedNode = (node: string) => {
+    // TODO set a boolean variable to toggle node click
+    // console.log('setClickedNode', node)
+    if(node) {
+        console.log('set selectedNode')
+        state.selectedNode = node
+        state.selectedNodeNeighbors = new Set(graph.neighbors(node))
+    }
+}
+const setHoveredNode = (node?: string) => {
     if (node) {
-    //   state.value.hoveredNode = node;
-    //   state.value.hoveredNeighbors = new Set(graph.neighbors(node));
       state.hoveredNode = node
-      state.hoveredNeighbors = new Set(graph.neighbors(node))
     }
-
     if (!node) {
-      state.hoveredNode = undefined;
-      state.hoveredNeighbors = undefined;
+      state.hoveredNode = undefined
     }
-
-    // Refresh rendering
-    renderer.value.refresh({
-      // We don't touch the graph data so we can skip its reindexation
-      skipIndexation: true,
-    });
 }
 const updateFilters = (filterType, modelValue) => {
     console.log('updateFilters',modelValue)
@@ -294,7 +291,7 @@ const updateFilters = (filterType, modelValue) => {
 
 }
 const updateGraphByPosition = () => {
-    console.log('updateGraphByPosition', positionsVmodel.value)
+    // console.log('updateGraphByPosition', positionsVmodel.value)
     if(positionsVmodel.value !== null && positionsVmodel.value.length !== 0){
         graph.forEachNode((node, {position}) => {
             graph.setNodeAttribute(node, 'hidden', !positionsVmodel.value.includes(position))
@@ -312,8 +309,8 @@ const updateGraphByPosition = () => {
         })
     }
 }
+// TODO review logic to highlight all edged and neighbouring nodes(in diff color)
 const updateGraphByProteinName = () => {
-    console.log('updateGraphByPosition', proteinNameModel.value)
     if(proteinNameModel.value !== null && proteinNameModel.value.length !== 0){
         graph.forEachNode((node, {protein}) => {
             const isHidden = graph.getNodeAttribute(node, 'hidden')
@@ -333,7 +330,6 @@ const updateGraphByProteinName = () => {
 }
 
 const updateGraphByResidue = () => {
-    console.log('updateGraphByPosition', residuesVmodel.value)
     if(residuesVmodel.value !== null && residuesVmodel.value.length !== 0){
         graph.forEachNode((node, {residue}) => {
             graph.setNodeAttribute(node, 'hidden', !residuesVmodel.value.includes(residue))
@@ -351,18 +347,9 @@ const updateGraphByResidue = () => {
         })
     }
 }
-// const decrement = () => {
-//     score.value = score.value > 0 ? score.value - 0.1 : 0
-//     updateGraphByScore(score.value)
-// }
-// const increment = () => {
-//     score.value = score.value < 1 ? score.value + 0.1 : 1
-//     updateGraphByScore(score.value)
-// }
-const updateGraphByScore = (score) => {
-    renderer.value.setSetting('edgeReducer', (edge, data) => {
-        const res = {...data}
-        // console.log(res)
+const updateGraphByScore = (score: number[]) => {
+    renderer.value.setSetting('edgeReducer', (edge: EdgeDisplayData, data: Attributes) => {
+        const res = { ...data } // make a new type for res that extends Attributes with pval and score
         if(res.score >= score[0] && res.score <= score[1]){
             res.hidden = true
         }
@@ -370,8 +357,8 @@ const updateGraphByScore = (score) => {
     })
 }
 const updateGraphByPval = () => {
-    renderer.value.setSetting('edgeReducer', (edge, data) => {
-        const res = {...data}
+    renderer.value.setSetting('edgeReducer', (edge: EdgeDisplayData, data: Attributes) => {
+        const res = {...data} 
         if(res.pval >= pval.value){
             res.hidden = true
         }
@@ -381,29 +368,34 @@ const updateGraphByPval = () => {
 const updateGraphByModification = () => {
     if(modificationsVmodel.value !== null && modificationsVmodel.value.length > 0) {
         graph.forEachNode((node, {modification}) => {
-            // console.log(node)
             const isHidden = graph.getNodeAttribute(node, 'hidden')
-            console.log('isHidden',isHidden)
             if(isHidden == undefined || !isHidden) {
                 graph.setNodeAttribute(node, 'hidden', !modificationsVmodel.value.includes(modification))
             }
         })
-        // updateGraphByScore(score.value)
         renderer.value.refresh({
             // We don't touch the graph data so we can skip its reindexation
             skipIndexation: true,
         });
     } else {
         resetGraph()
-        if(proteinName.value.length > 0) {
+        if(proteinNameModel.value.length > 0) {
             updateGraphByProteinName()
         }
     }
 }
+const resetZoom = () => {
+    // renderer.value.getCamera().goTo({ x: 0, y: 0, angle: 0, ratio: 0.5 })
+    renderer.value.getCamera().animatedReset( {duration: 600})
+}
 const resetGraph = () => {
+    state.selectedNode = null
+    state.selectedNodeNeighbors = null
+    state.hoveredNode = null
     graph.forEachNode((node) => {
         graph.setNodeAttribute(node, 'hidden', undefined)
     })
+    
     renderer.value.refresh({
         // We don't touch the graph data so we can skip its reindexation
         skipIndexation: true,
@@ -414,16 +406,21 @@ const getMouseLayer = () => {
 }
 
 const addDataToGraph = () => {
-    dataNodes.value.forEach((line, index) => {
-        if(index > 0) {
-            graph.addNode(line[0], {size: 10, label: line[0], protein: line[1], modification: line[5], position: line[3], residue: line[4]})
-        }
-    });
+    dataNodes.value.forEach((node: Node, index: number) => {
+        graph.addNode(node.composite_name,
+            {
+                size: 10,
+                label: node.composite_name,
+                protein: node.accession,
+                modification: modifications.value.filter(el => el.l_unimod_id == node.l_unimod_id)[0].unimod_id,
+                position: node.position,
+                residue: node.residue
+            }
+        )}
+    )
 
-    dataEdges.value.forEach((line, index) => {
-        if(index > 0) {
-            graph.addEdge(line[0], line[1], {type: 'line', label: '', color: '#cccccc', weight: 1, score: Number.parseFloat(line[2])})
-        }
+    dataEdges.value.forEach((edge: Edge, index: number) => {
+        graph.addEdge(edge.node_a, edge.node_b, {type: 'line', label: '', color: '#cccccc', weight: 1, score: edge.score})
     })
     const degrees = graph.nodes().map((node) => graph.degree(node))
     const minDegree = Math.min(...degrees);
@@ -435,7 +432,7 @@ const addDataToGraph = () => {
         graph.setNodeAttribute(
             node,
             "size",
-            minSize + ((degree - minDegree) / (maxDegree - minDegree)) * (maxSize - minSize),
+            minSize + ((degree - minDegree) / (maxDegree - minDegree)) * (maxSize - minSize)
         )
     })
     graph.forEachNode((node, attributes) =>{
@@ -445,88 +442,122 @@ const addDataToGraph = () => {
 
 }
 const getDataEdges = async () => {
-  console.log('getdata')
-  const url = baseApiUrl + 'get-data-edges'
+  const url = baseApiUrl + 'get-edges'
   try {
       const response = await fetch(url)
       if(!response.ok) {
           throw new Error(`Response status: ${response.status}`)
       }
       const res_json = await response.json()
-      dataEdges.value = res_json[0]
-      dataNodes.value = res_json[1]
-      // console.log('dataEdges', dataEdges.value)
+      dataEdges.value = res_json
+  } catch (error) {
+      console.log(error.message)
+  }
+}
+const getDataNodes = async () => {
+  const url = baseApiUrl + 'get-nodes'
+  try {
+      const response = await fetch(url)
+      if(!response.ok) {
+          throw new Error(`Response status: ${response.status}`)
+      }
+      const res_json = await response.json()
+      dataNodes.value = res_json
   } catch (error) {
       console.log(error.message)
   }
 }
 const getDataModifications = async () => {
-    console.log('getmodifications')
-    const url = baseApiUrl + 'get-data-modifications'
+    const url = baseApiUrl + 'get-unimod'
     try {
         const response = await fetch(url)
         if(!response.ok) {
             throw new Error(`Response status: ${response.status}`)
         }
         dataUnimod.value = await response.json()
-        // console.log('dataUnimod', dataUnimod.value)
     } catch (error) {
         console.log(error.message)
     }
-
 }
 const setFiltersAttributes = () => {
-    dataNodes.value.forEach( (row, index) => {
-        if(index > 0) {
-            if(!positions.value.includes(row[2])){
-                positions.value.push(row[2])
-            }
-            if(!residues.value.includes(row[3])){
-                residues.value.push(row[3])
-            }
-            if(!proteins.value.includes(row[1])){
-                proteins.value.push(row[1])
-            }
+    dataNodes.value.forEach( (node: Node) => {
+        if(!positions.value.includes(node.position)){
+            positions.value.push(node.position)
+        }
+        if(!residues.value.includes(node.residue)){
+            residues.value.push(node.residue)
+        }
+        if(!proteins.value.includes(node.accession)){
+            proteins.value.push(node.accession)
         }
     })
 }
 const setModifications = async() => {
-    await getDataModifications()
-    // console.log('setModifications', dataNodes.value)
-    dataNodes.value.forEach( (row, index) => {
+    dataNodes.value.forEach( (node: Node, index: number) => {
         if(index > 0) {
-            if(!modifications.value.includes(row[5])){
-                modifications.value.push(row[5])
+            if(!modifications.value.includes(node.l_unimod_id)){
+                modifications.value.push(node.l_unimod_id)
             }
         }
     })
     modifications.value.sort(compareNumbers)
     modifications.value.forEach((value, index) => {
-        // console.log('modVal in forEach',value)
         const foundUnimod = dataUnimod.value.filter((el) => {
-            return el[0] == value
+            return el.l_unimod_id == value
         })
-        // console.log('foundUnimod',foundUnimod)
+        foundUnimod[0]['title'] = foundUnimod[0].unimod_id + ' ' + foundUnimod[0].full_name + ' ' + foundUnimod[0].avg_mass
         modifications.value[index] = foundUnimod[0]
     })
-    // console.log('modifications',modifications.value)
 }
 const toggleModifications = () => {
     console.log('modifications vmodel', modificationsVmodel.value)
 }
 
-const compareNumbers = (a, b) => {
+const compareNumbers = (a: number, b: number) => {
   return a - b;
 }
 
+const downloadImage = () => {
+    downloadAsImage(renderer.value, {
+        layers: ["edges", "nodes", "edgeLabels", "labels"],
+        format: 'png',
+        fileName: 'network.png',
+        backgroundColor: '#ffffff'
+    })
+}
+const downloadData = () => {
+    let edgesList = []
+    graph.forEachEdge((edge, data) => {
+        const res = { ...data }
+        if(state.selectedNodeNeighbors && graph.hasExtremity(edge, state.selectedNode) || graph.extremities(edge).every((n) => state.selectedNodeNeighbors.has(n) || n === state.selectedNode)) {
+            edgesList.push({
+                score: data.score,
+                node_a: graph.extremities(edge)[0],
+                node_b: graph.extremities(edge)[1]
+            })
+        }
+    })
+    const exportedGraph = JSON.stringify(edgesList)
+    const blob = new Blob([exportedGraph], { type: "application/json" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = "network.json"
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+}
 </script>
 
 <template lang="pug">
 v-row
     .v-col-9
-        div(id="loader")
+        div(id="loader" ref="loader" v-if="showLoader")
             p Creating network
-        div(id="sigma-network")
+        div(
+            id="sigma-network"
+            ref="sigma-container"
+        )
     //- div(ref="container")
     .v-col-3
         div
@@ -585,24 +616,51 @@ v-row
                 chips
                 v-model="proteinNameModel"
                 :items="proteins"
+                @update:modelValue="updateGraphByFilters"
             )
-            //- @update:modelValue="updateGraphByFilters"
-        v-expansion-panels
-            v-expansion-panel
-                v-expansion-panel-title(collapse-icon="mdi-minus" expand-icon="mdi-plus")
-                    | Modifications
-                v-expansion-panel-text.extension-panel
-                    v-list
-                        v-list-item(v-for="item in modifications" :key="item[0]")
-                            v-checkbox(
-                                v-model="modificationsVmodel"
-                                :value="item[0]"
+        div
+            h5 Modifications
+             v-autocomplete(
+                clearable
+                closable-chips
+                chips
+                v-model="modificationsVmodel"
+                :items="modifications"
+                multiple
+                item-title="title"
+                item-value="unimod_id"
+            ) 
+        //- v-expansion-panels
+        //-     v-expansion-panel
+        //-         v-expansion-panel-title(collapse-icon="mdi-minus" expand-icon="mdi-plus")
+        //-             | Modifications
+        //-         v-expansion-panel-text.extension-panel
+        //-             v-autocomplete(
+        //-                 clearable
+        //-                 closable-chips
+        //-                 chips
+        //-                 v-model="modificationsVmodel"
+        //-                 :items="modifications"
+                        
+        //-                 multiple
+        //-             ) 
+        //-                 template(v-slot:item="{ props, item }")
+        //-                     v-list-item(
+        //-                         v-bind="props"
+        //-                         :title="item.raw.unimod_id + ' ' + item.raw.full_name + ' ' + item.raw.avg_mass"
                             )
-                                //- @update:modelValue="updateGraphByFilters"
-                                template(
-                                    v-slot:label
-                                )
-                                    | {{ item[0] }} {{item[1]}} {{item[3] }}
+                    //- @update:modelValue="updateGraphByModification"
+                    //- v-list
+                    //-     v-list-item(v-for="item in modifications" :key="item.unimod_id")
+                    //-         v-checkbox(
+                    //-             v-model="modificationsVmodel"
+                    //-             :value="item.unimod_id"
+                    //-         )
+                    //-             //- @update:modelValue="updateGraphByFilters"
+                    //-             template(
+                    //-                 v-slot:label
+                    //-             )
+                    //-                 | {{ item.unimod_id }} {{ item.full_name }} {{ item.avg_mass }}
             //- v-expansion-panel
             //-     v-expansion-panel-title(collapse-icon="mdi-minus" expand-icon="mdi-plus")
             //-         | Positions
@@ -632,16 +690,43 @@ v-row
             //-                     )
             //-                         | {{ item }}
         //- | {{ modificationsVmodel }}
+        div
+            v-btn(
+                @click="downloadImage" 
+            ) Download image
+        div.mt-5
+            v-btn(
+                @click="downloadData"
+            ) Download data
+        v-row.mt-5
+            .v-col-6
+                v-btn.mr-5(
+                    @click="resetGraph"
+                ) Reset selections
+            .v-col-6
+                v-btn(
+                    @click="resetZoom"
+                ) Reset zoom
+        div.licence
+            small
+                | © 2025 -  CompOmics -  Licensed under Apache 2.0
+        
 </template>
 
 <style lang="scss" scoped>
 #sigma-network {
   width: 100%;
-  height: 1000px;
+  height: 850px;
 }
 .extension-panel {
     max-height: 500px;
     overflow-y: scroll;
+}
+.licence {
+    position: absolute;
+    bottom: 10px;
+    font-size: 15px;
+    color: #888;
 }
 
 </style>

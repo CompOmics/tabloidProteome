@@ -1,11 +1,11 @@
 services:
-  test_db: # web_app
+  web_app:
     env_file:
-      - .env
+      - .env.local
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: tabloid_proteome_modpa_test_db
+    container_name: tabloid_proteome_modpa_web_app
     restart: always
     ports:
       - 5600:5600

@@ -16,14 +16,14 @@ v-app
                     img.logo(
                         src="./assets/logo.png"
                     ) 
-            template(
-                v-slot:append
-            )
-                .d-flex.ga-1
-                    v-btn(
-                        icon="mdi-menu"
-                        @click.stop="drawer = !drawer"
-                    )
+            //- template(
+            //-     v-slot:append
+            //- )
+            //-     .d-flex.ga-1
+            //-         v-btn(
+            //-             icon="mdi-menu"
+            //-             @click.stop="drawer = !drawer"
+            //-         )
             //- v-app-bar-nav-icon(variant="image") 
             //- v-btn(
             //-   icon="mdi-menu"
