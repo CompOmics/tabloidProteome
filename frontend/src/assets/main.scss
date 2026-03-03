@@ -1,4 +1,4 @@
-@import './base.css';
+@import "./base.css";
 
 #app {
   // max-width: 1280px;
@@ -8,18 +8,21 @@
 }
 
 a,
-.green {
+.blue-link {
   text-decoration: none;
-  color: hsla(160, 100%, 37%, 1);
+  color: rgb(0, 151, 189);
   transition: 0.4s;
   padding: 3px;
+}
+nav a.router-link-exact-active {
+  text-decoration: underline;
 }
 .v-container {
   width: 100%;
 }
 @media (hover: hover) {
   a:hover {
-    background-color: hsla(160, 100%, 37%, 0.2);
+    background-color: hwb(212 0% 26% / 0.2);
   }
 }
 // @media (min-width: 1280px) {
@@ -51,13 +54,13 @@ a,
     width: 100%;
   }
 }
-.loader{
-    display: inline-block;
-    width: 1em;
-    height: 1em;
-    color: inherit;
-    vertical-align: middle;
-    pointer-events: none;
+.loader {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  color: inherit;
+  vertical-align: middle;
+  pointer-events: none;
 }
 .loader:before,
 .loader:after,
@@ -82,7 +85,7 @@ a,
   }
   &:before,
   &:after {
-    content: '';
+    content: "";
     display: block;
     position: absolute;
     top: 0;
@@ -98,7 +101,6 @@ a,
     box-shadow: 0 1em 0 -1em;
   }
   40% {
-    box-shadow: 0 1em 0 -.2em;
+    box-shadow: 0 1em 0 -0.2em;
   }
 }
-

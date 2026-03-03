@@ -1,8 +1,9 @@
 <script setup>
-import { ref } from 'vue'
-import { RouterLink, RouterView } from 'vue-router'
+import { ref } from "vue";
+import { RouterLink, RouterView } from "vue-router";
 // import HelloWorld from './components/HelloWorld.vue'
-const drawer = ref(false)
+const drawer = ref(false);
+const showAnalyticsNotice = ref(true);
 </script>
 
 <template lang="pug">
@@ -15,7 +16,12 @@ v-app
                 a(href="/")
                     img.logo(
                         src="./assets/logo.png"
-                    ) 
+                    )
+            template(v-slot:append)
+                nav
+                    RouterLink(to="/") Home
+                    RouterLink(to="/about") About
+            
             //- template(
             //-     v-slot:append
             //- )
@@ -41,6 +47,13 @@ v-app
             v-list-item(title="About")
             v-list-item(title="Privacy")
     RouterView
+    v-alert.analytics-notice(
+        v-if="showAnalyticsNotice"
+        type="info"
+        closable
+        @update:modelValue="showAnalyticsNotice = $event"
+    )
+        | This site uses Google Analytics to help us understand user interactions and improve our service.
 </template>
 
 <style scoped>
@@ -53,7 +66,7 @@ v-app
   height: 80px;
 }
 .v-navigation-drawer.v-navigaion-drawer--active {
-    top: 25px !important;
+  top: 25px !important;
 }
 nav {
   width: 100%;
@@ -104,5 +117,13 @@ nav a:first-of-type {
     padding: 1rem 0;
     margin-top: 1rem;
   }
+}
+
+.analytics-notice {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  max-width: 400px;
+  z-index: 1000;
 }
 </style>
