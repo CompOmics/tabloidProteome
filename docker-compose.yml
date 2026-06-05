@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: tabloid_proteome_modpa_test_db
+    container_name: tabloid_proteome_modpa
     restart: always
     ports:
       - 5600:5600

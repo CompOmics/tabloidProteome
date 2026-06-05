@@ -33,18 +33,9 @@ class Edge(BaseModel):
 
 
 class Node(BaseModel):
-    """Schema for a node row from `modifications_list_1.csv`.
-
-    Assumed columns (by index usage in frontend):
-    - 0: PTM_ID
-    - 1: (Gene)Accession
-    - 2: GeneName
-    - 3: POS
-    - 4: RES
-    - 5: MOD (unimod id)
-    - 8: EntryName
-    """
+    id: int
     composite_name: str
+    composite_gene_name: str
     accession: str
     entry_name: str
     gene_name: str

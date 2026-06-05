@@ -57,6 +57,7 @@ def insert_nodes():
         for row in df_nodes.itertuples():
             node = NodeModel(
                 composite_name=row.PTM_ID,
+                composite_gene_name=row.GeneName + '|' + str(row.POS) + '|' + row.RES + '|' + str(row.MOD),
                 accession=row.Gene,
                 entry_name=row.EntryName,
                 gene_name=row.GeneName,

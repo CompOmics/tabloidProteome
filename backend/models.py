@@ -26,6 +26,7 @@ class NodeModel(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     composite_name = Column(String, index=True, nullable=True)
+    composite_gene_name = Column(String, index=True, nullable=True)
     accession = Column(String, index=True, nullable=False)
     entry_name = Column(String, index=True, nullable=True)
     gene_name = Column(String, index=True, nullable=True)

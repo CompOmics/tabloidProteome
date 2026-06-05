@@ -43,8 +43,62 @@ def getUnimod(db: Session = Depends(get_db)) -> list[UnimodDistinct]:
     ).distinct()
     unimod = db.execute(stmt).all()
     return unimod
-    # nodes = db.scalars(select(NodeModel)).all()
-    # return nodes
+
+@router.get('/get-nodes-test', status_code = status.HTTP_200_OK)
+def getNodesTest(db: Session = Depends(get_db)) -> list[Node]:
+    """Get first 20 nodes for testing"""
+    nodes = db.scalars(select(NodeModel).limit(20)).all()
+    # Convert to plain dicts to ensure JSON serializability
+    result = []
+    for node in nodes:
+        result.append({
+            "id": node.id,
+            "composite_name": node.composite_name or "",
+            "composite_gene_name": node.composite_gene_name or "",
+            "accession": node.accession or "",
+            "entry_name": node.entry_name or "",
+            "gene_name": node.gene_name or "",
+            "position": node.position or "",
+            "residue": node.residue or "",
+            "l_unimod_id": node.l_unimod_id or 0,
+        })
+    return result
+
+@router.get('/get-edges-test', status_code = status.HTTP_200_OK)
+def getEdgesTest(db: Session = Depends(get_db)) -> list[Edge]:
+    """Get edges connecting first 20 nodes"""
+    # Get first 20 nodes
+    first_nodes = db.scalars(select(NodeModel.id).limit(20)).all()
+    
+    if not first_nodes:
+        return []
+    
+    # Get edges where both endpoints are in the first 20 nodes
+    node_a = aliased(NodeModel)
+    node_b = aliased(NodeModel)
+    stmt = select(
+         EdgeModel.score,
+         EdgeModel.l_node_a_id,
+         EdgeModel.l_node_b_id,
+         node_a.composite_name.label('node_a'),
+         node_b.composite_name.label('node_b')
+    ).join(node_a, EdgeModel.l_node_a_id == node_a.id
+    ).join(node_b, EdgeModel.l_node_b_id == node_b.id
+    ).where(EdgeModel.l_node_a_id.in_(first_nodes)
+    ).where(EdgeModel.l_node_b_id.in_(first_nodes))
+    
+    edges = db.execute(stmt).all()
+    # Convert to plain dicts to ensure JSON serializability
+    result = []
+    for edge in edges:
+        result.append({
+            "score": float(edge.score) if edge.score is not None else 0.0,
+            "l_node_a_id": edge.l_node_a_id,
+            "l_node_b_id": edge.l_node_b_id,
+            "node_a": edge.node_a or "",
+            "node_b": edge.node_b or "",
+        })
+    return result
 
 @router.get('/get-data-edges', status_code = status.HTTP_200_OK)
 def getDataEdges():

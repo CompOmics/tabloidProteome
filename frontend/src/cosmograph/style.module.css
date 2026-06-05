@@ -1,0 +1,12 @@
+.attribution {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 20;
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.attribution:hover {
+  opacity: 1;
+}
