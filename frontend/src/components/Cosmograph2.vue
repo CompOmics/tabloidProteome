@@ -8,10 +8,23 @@ type ApiNode = {
     composite_gene_name: string;
     accession: string;
     gene_name: string;
-    l_unimod_id: number;
+    position: string | null;
+    residue: string | null;
+    unimod_id: string;
+    full_name: string;
 };
-type ApiEdge = { node_a: string; node_b: string; score: number };
-type UnimodEntry = { l_unimod_id: number; unimod_id: string; full_name: string; avg_mass: number };
+type ApiEdge = {
+    node_a: string;
+    node_b: string;
+    score: number;
+    qvalue: number | null;
+    same_protein: number | null;
+    same_site: number | null;
+    position_gap: number | null;
+    same_mod: number | null;
+    shared_peptide: number | null;
+};
+type UnimodEntry = { unimod_id: string; full_name: string; avg_mass: number };
 type HistoBin = { lo: number; hi: number; count: number };
 
 const BASE_URL =
@@ -35,9 +48,19 @@ const allEdges = ref<ApiEdge[]>([]);
 const unimodEntries = ref<UnimodEntry[]>([]);
 
 // — Filter state —
+// Slider's lower bound. Edge count explodes below ~0.35 (4.1M edges at 0.35, 11.1M at 0.3,
+// ~19M — the whole table — at 0.2-0.25): past that cliff a force-directed layout isn't
+// meaningfully renderable regardless of fetch/query speed, so the floor is set past it rather
+// than at the true global minimum (0.2). Hardcoded rather than queried at runtime — the
+// dataset only changes on a manual re-ingest.
+const DATA_MIN_SCORE = 0.4;
+// The selection itself still starts at 0.6 regardless of that bound.
 const scoreRange = ref<[number, number]>([0.6, 1]);
+// Live count of edges matching the current score range, shown next to the slider so users see
+// the fetch size before it happens rather than discovering it by a frozen tab.
+const edgeCount = ref<number | null>(null);
 const selectedProteins = ref<string[]>([]);
-const selectedMods = ref<number[]>([]);
+const selectedMods = ref<string[]>([]);
 const proteinFilterField = ref<"accession" | "gene_name">("accession");
 
 // — Color scheme —
@@ -75,12 +98,13 @@ const proteinOptions = computed(() =>
 );
 
 const modificationOptions = computed(() => {
-    const uniqueIds = [...new Set(allNodes.value.map((n) => n.l_unimod_id))].sort((a, b) => a - b);
+    const uniqueIds = [...new Set(allNodes.value.map((n) => n.unimod_id))].sort();
     return uniqueIds.map((id) => {
-        const entry = unimodEntries.value.find((u) => u.l_unimod_id === id);
+        const fullName = allNodes.value.find((n) => n.unimod_id === id)?.full_name ?? "";
+        const avgMass = unimodEntries.value.find((u) => u.unimod_id === id)?.avg_mass;
         return {
             value: id,
-            title: entry ? `${entry.unimod_id} ${entry.full_name} (${entry.avg_mass})` : String(id),
+            title: avgMass !== undefined ? `${id} ${fullName} (${avgMass})` : `${id} ${fullName}`,
         };
     });
 });
@@ -93,6 +117,11 @@ const connectedEdges = computed(() => {
     if (!selectedNode.value) return [];
     const name = selectedNode.value.composite_name;
     return renderedEdges.value.filter((e) => e.node_a === name || e.node_b === name);
+});
+
+const selectedNodeModDisplay = computed(() => {
+    if (!selectedNode.value) return "";
+    return `${selectedNode.value.full_name} (${selectedNode.value.unimod_id})`;
 });
 
 const histogramBins = computed((): HistoBin[] | null => {
@@ -217,24 +246,15 @@ watch(histogramBins, drawHistogram, { immediate: true, flush: "post" });
 
 // — Color helpers —
 
-function modLabel(entry: UnimodEntry | undefined, modId: number): string {
-    return entry ? `${entry.unimod_id} — ${entry.full_name}` : String(modId);
-}
-
-function modKey(entry: UnimodEntry | undefined, modId: number): string {
-    return entry?.unimod_id ?? String(modId);
-}
-
 function buildModColors(nodes: ApiNode[]) {
-    const uniqueModIds = [...new Set(nodes.map((n) => n.l_unimod_id))].sort((a, b) => a - b);
+    const uniqueModIds = [...new Set(nodes.map((n) => n.unimod_id))].sort();
     const colorMap: Record<string, string> = {};
     const legendItems: Array<{ name: string; color: string }> = [];
-    uniqueModIds.forEach((modId, i) => {
-        const entry = unimodEntries.value.find((u) => u.l_unimod_id === modId);
-        const key = modKey(entry, modId);
+    uniqueModIds.forEach((unimodId, i) => {
+        const fullName = nodes.find((n) => n.unimod_id === unimodId)?.full_name ?? unimodId;
         const color = MOD_PALETTE[i % MOD_PALETTE.length];
-        colorMap[key] = color;
-        legendItems.push({ name: modLabel(entry, modId), color });
+        colorMap[unimodId] = color;
+        legendItems.push({ name: `${unimodId} — ${fullName}`, color });
     });
     currentModColorMap.value = colorMap;
     modLegendItems.value = legendItems;
@@ -265,7 +285,7 @@ function filterData(): { nodes: ApiNode[]; edges: ApiEdge[] } {
         const proteinOk =
             selectedProteins.value.length === 0 ||
             selectedProteins.value.includes(n[proteinFilterField.value]);
-        const modOk = selectedMods.value.length === 0 || selectedMods.value.includes(n.l_unimod_id);
+        const modOk = selectedMods.value.length === 0 || selectedMods.value.includes(n.unimod_id);
         return proteinOk && modOk;
     });
 
@@ -291,14 +311,11 @@ async function prepareData(nodes: ApiNode[], edges: ApiEdge[]) {
 
     const useGene = proteinFilterField.value === "gene_name";
 
-    const points = nodes.map((n) => {
-        const entry = unimodEntries.value.find((u) => u.l_unimod_id === n.l_unimod_id);
-        return {
-            id: n.composite_name,
-            mod_name: modKey(entry, n.l_unimod_id),
-            label: useGene ? n.composite_gene_name : n.composite_name,
-        };
-    });
+    const points = nodes.map((n) => ({
+        id: n.composite_name,
+        mod_name: n.unimod_id,
+        label: formatPipedLabel(useGene ? n.composite_gene_name : n.composite_name),
+    }));
     const links = validEdges.map((e) => ({ source: e.node_a, target: e.node_b, score: e.score }));
 
     const prepared = await prepareCosmographData(
@@ -458,6 +475,18 @@ function updateColors() {
 
 // — Display helpers —
 
+/** Adds spacing around "|" separators, e.g. "Q53SF7|356|S|21" -> "Q53SF7 | 356 | S | 21". */
+function formatPipedLabel(value: string): string {
+    return value.replace(/\|/g, " | ");
+}
+
+/** Compact count display, e.g. 1424588 -> "1.4M", 50563 -> "50.6K", 170 -> "170". */
+function formatCount(n: number): string {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+    return n.toLocaleString();
+}
+
 /** Human-readable label for a node, respecting the current protein filter field. */
 function nodeDisplayLabel(node: ApiNode): string {
     return proteinFilterField.value === "gene_name"
@@ -495,6 +524,41 @@ const resetFilters = () => {
 };
 
 const resetZoom = () => fitToNodes(500);
+
+const EDGE_CSV_COLUMNS = [
+    "node_a",
+    "node_b",
+    "score",
+    "qvalue",
+    "same_protein",
+    "same_site",
+    "position_gap",
+    "same_mod",
+    "shared_peptide",
+] as const;
+
+function edgesToCsv(edges: ApiEdge[]): string {
+    const escape = (value: unknown): string => {
+        if (value === null || value === undefined) return "";
+        const s = String(value);
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const rows = edges.map((e) => EDGE_CSV_COLUMNS.map((col) => escape(e[col])).join(","));
+    return [EDGE_CSV_COLUMNS.join(","), ...rows].join("\n");
+}
+
+/** Downloads the currently displayed connected edges for the selected node as CSV. */
+const downloadConnectedEdges = () => {
+    if (!selectedNode.value || connectedEdges.value.length === 0) return;
+    const csv = edgesToCsv(connectedEdges.value);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${selectedNode.value.composite_name.replace(/\|/g, "_")}_edges.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+};
 
 /**
  * Cosmograph renders labels as CSS DOM elements (via @interacta/css-labels), not on the
@@ -617,9 +681,103 @@ function updatePanelHeight() {
     panelHeight.value = `${Math.floor(window.innerHeight - top) - 12}px`;
 }
 
+// — Crash recovery —
+// Some browser extensions (dark mode filters, ad blockers, translators) rewrite the DOM
+// out from under Cosmograph's own DOM/canvas manipulation, which throws an uncaught
+// "insertBefore"/"removeChild" DOMException outside any of our try/catch blocks. We can't
+// fix the extension, so we detect the crash globally and remount the instance instead.
+const RENDER_CRASH_PATTERN = /insertBefore|removeChild/;
+const MAX_RENDER_RETRIES = 2;
+let renderRetryCount = 0;
+const showRenderError = ref(false);
+const renderRetriesExhausted = ref(false);
+const renderErrorMessage = computed(() =>
+    renderRetriesExhausted.value
+        ? "Graph rendering keeps failing. This is usually caused by a browser extension that modifies the page (dark mode filter, ad blocker, translator, ...). Try disabling such extensions for this site, or reload in a private window."
+        : "Graph rendering was interrupted, likely by a browser extension that modifies the page (dark mode filter, ad blocker, translator, ...). Attempting to recover automatically…",
+);
+
+function createInstance(prepared: Awaited<ReturnType<typeof prepareData>>) {
+    if (!container.value) return;
+    cosmographInstance.value = new Cosmograph(container.value, buildConfig(prepared));
+    initialFitDone = false;
+    // Give the simulation ~1 s to place nodes, then zoom in. onSimulationEnd will
+    // do a final fit once the layout fully stabilises.
+    setTimeout(() => fitToNodes(400), 1000);
+}
+
+function fetchEdges(minScore: number): Promise<ApiEdge[]> {
+    return fetchJson<ApiEdge[]>(`get-edges?min_score=${minScore}`);
+}
+
+function fetchEdgeCount(minScore: number, maxScore: number): Promise<number> {
+    return fetchJson<number>(`get-edges-count?min_score=${minScore}&max_score=${maxScore}`);
+}
+
+async function loadAndInitGraph() {
+    const [nodes, edges, unimod] = await Promise.all([
+        fetchJson<ApiNode[]>("get-nodes"),
+        fetchEdges(scoreRange.value[0]),
+        fetchJson<UnimodEntry[]>("get-unimod"),
+    ]);
+
+    allNodes.value = nodes;
+    allEdges.value = edges;
+    unimodEntries.value = unimod;
+
+    const prepared = await prepareData(nodes, edges);
+    createInstance(prepared);
+}
+
+function handleRenderCrash() {
+    showRenderError.value = true;
+
+    if (renderRetryCount >= MAX_RENDER_RETRIES) {
+        renderRetriesExhausted.value = true;
+        return;
+    }
+    renderRetryCount++;
+
+    cosmographInstance.value?.destroy();
+    cosmographInstance.value = null;
+    // Reuse the last prepared dataset if we have one — avoids redundant refetching and
+    // reproduces the graph as it was right before the crash.
+    setTimeout(() => {
+        if (storedPrepared) createInstance(storedPrepared);
+        else void loadAndInitGraph();
+    }, 150);
+}
+
+function handleWindowError(event: ErrorEvent) {
+    if (!RENDER_CRASH_PATTERN.test(event.message ?? "")) return;
+    event.preventDefault();
+    handleRenderCrash();
+}
+
+// Cosmograph catches this exact crash internally (inside its own _rebuildGraph) and only
+// console.logs it — it never becomes an uncaught error/rejection, so window.onerror never
+// fires. It does surface as a "🚨 ..." message it renders into its own container, though,
+// so we watch for that instead of relying on a global error listener for this specific case.
+let renderCrashObserver: MutationObserver | null = null;
+
+function watchCosmographMessageElement() {
+    if (!container.value) return;
+    renderCrashObserver = new MutationObserver(() => {
+        if (RENDER_CRASH_PATTERN.test(container.value?.textContent ?? "")) handleRenderCrash();
+    });
+    renderCrashObserver.observe(container.value, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+    });
+}
+
 // — Lifecycle —
 onMounted(async () => {
     if (!container.value) return;
+
+    window.addEventListener("error", handleWindowError);
+    watchCosmographMessageElement();
 
     // Measure available height before data loading so the layout is stable.
     // nextTick ensures DOM is rendered, but the navbar logo (height: 80px) may not yet be
@@ -633,27 +791,15 @@ onMounted(async () => {
     }
     window.addEventListener("resize", updatePanelHeight);
 
-    const [nodes, edges, unimod] = await Promise.all([
-        fetchJson<ApiNode[]>("get-nodes"),
-        fetchJson<ApiEdge[]>("get-edges"),
-        fetchJson<UnimodEntry[]>("get-unimod"),
-    ]);
-
-    allNodes.value = nodes;
-    allEdges.value = edges;
-    unimodEntries.value = unimod;
-
-    const prepared = await prepareData(nodes, edges);
-
-    cosmographInstance.value = new Cosmograph(container.value, buildConfig(prepared));
-
-    // Give the simulation ~1 s to place nodes, then zoom in. onSimulationEnd will
-    // do a final fit once the layout fully stabilises.
-    setTimeout(() => fitToNodes(400), 1000);
+    await loadAndInitGraph();
 });
 
 onBeforeUnmount(() => {
     window.removeEventListener("resize", updatePanelHeight);
+    window.removeEventListener("error", handleWindowError);
+    renderCrashObserver?.disconnect();
+    clearTimeout(scoreFetchTimer);
+    clearTimeout(countFetchTimer);
     cosmographInstance.value?.destroy();
     cosmographInstance.value = null;
 });
@@ -661,23 +807,75 @@ onBeforeUnmount(() => {
 watch(proteinFilterField, () => {
     selectedProteins.value = [];
 });
-watch([scoreRange, selectedProteins, selectedMods, proteinFilterField], updateGraph, { deep: true });
+watch([scoreRange, selectedProteins, selectedMods, proteinFilterField], updateGraph, {
+    deep: true,
+});
 watch(colorScheme, updateColors);
+
+// The backend only ever returns edges with score >= min_score, so lowering the slider's
+// minimum needs a fresh fetch, not just client-side filtering of what's already loaded.
+// Debounced so dragging the handle doesn't fire a request per pixel.
+let scoreFetchTimer: ReturnType<typeof setTimeout> | undefined;
+watch(
+    () => scoreRange.value[0],
+    (min) => {
+        clearTimeout(scoreFetchTimer);
+        scoreFetchTimer = setTimeout(async () => {
+            allEdges.value = await fetchEdges(min);
+            await updateGraph();
+        }, 300);
+    },
+);
+
+// Lightweight live count for the current range, independent of the (heavier, debounced above)
+// actual edge fetch — cheap enough to update on every drag tick without waiting for it to settle.
+let countFetchTimer: ReturnType<typeof setTimeout> | undefined;
+watch(
+    scoreRange,
+    ([a, b]) => {
+        clearTimeout(countFetchTimer);
+        countFetchTimer = setTimeout(async () => {
+            edgeCount.value = await fetchEdgeCount(Math.min(a, b), Math.max(a, b));
+        }, 150);
+    },
+    { deep: true, immediate: true },
+);
 </script>
 
 <template lang="pug">
 v-row()
     v-col(cols="10" md="9")
+        v-alert(
+            v-if="showRenderError"
+            type="warning"
+            variant="tonal"
+            density="compact"
+            closable
+            class="mb-2"
+            @click:close="showRenderError = false"
+        )
+            | {{ renderErrorMessage }}
         div(ref="container" class="cosmograph-container")
     v-col(cols="2" md="3")
-        div.right-panel(ref="rightPanelRef" style="background-color: white; padding: 16px; border-radius: 8px;")
+        div.right-panel(ref="rightPanelRef" style="padding: 16px; border-radius: 8px;")
             div()
-                h4 Score
+                .d-flex.align-center.justify-space-between
+                    .d-flex.align-center.ga-1
+                        h4 Score
+                        v-tooltip(text="Signed Distance Correlation" location="top")
+                            template(v-slot:activator="{ props }")
+                                v-icon(
+                                    v-bind="props"
+                                    icon="mdi-information-outline"
+                                    size="14"
+                                    class="text-medium-emphasis"
+                                )
+                    span.text-caption.text-medium-emphasis(v-if="edgeCount !== null") ~{{ formatCount(edgeCount) }} edges
                 v-range-slider(
                     v-model="scoreRange"
                     :step="0.1"
                     :max="1"
-                    :min="-1"
+                    :min="DATA_MIN_SCORE"
                     class="alingn-center"
                     hide-details
 
@@ -686,7 +884,7 @@ v-row()
                         v-text-field(
                             v-model="scoreRange[0]"
                             density="compact"
-                            style="width: 70px"
+                            style="width: 70px; margin-right: 10px"
                             type="number"
                             step="0.1"
                             variant="outlined"
@@ -697,7 +895,7 @@ v-row()
                         v-text-field(
                             v-model="scoreRange[1]"
                             density="compact"
-                            style="width: 70px"
+                            style="width: 70px; margin-left: 10px"
                             type="number"
                             step="0.1"
                             variant="outlined"
@@ -712,6 +910,7 @@ v-row()
                         mandatory
                         density="compact"
                         color="primary"
+                        variant="outlined"
                         style="margin-bottom: 10px;"
                     )
                         v-btn(value="accession" size="small") Accession
@@ -746,6 +945,7 @@ v-row()
                     mandatory
                     density="compact"
                     color="primary"
+                    variant="outlined"
                     class="mb-3"
                     style="margin-bottom: 10px;"
                 )
@@ -780,14 +980,30 @@ v-row()
 
             div(v-if="selectedNode")
                 h4(class="selected-node-title") Selected node
-                p.text-body-2 {{ nodeDisplayLabel(selectedNode) }}
-                p.text-body-2
-                    | {{ proteinFilterField === 'gene_name' ? 'Gene' : 'Protein' }}: {{ nodeProteinDisplay(selectedNode) }}
-                p.text-body-2
-                    | Modification: {{ unimodEntries.find(u => u.l_unimod_id === selectedNode?.l_unimod_id)?.unimod_id ?? selectedNode?.l_unimod_id }}
+                table.node-info-table
+                    tbody
+                        tr
+                            td.info-label Name
+                            td.info-value {{ formatPipedLabel(nodeDisplayLabel(selectedNode)) }}
+                        tr
+                            td.info-label {{ proteinFilterField === 'gene_name' ? 'Gene' : 'Protein' }}
+                            td.info-value {{ nodeProteinDisplay(selectedNode) }}
+                        tr
+                            td.info-label Position
+                            td.info-value {{ selectedNode.position }}
+                        tr
+                            td.info-label Residue
+                            td.info-value {{ selectedNode.residue }}
+                        tr
+                            td.info-label Modification
+                            td.info-value {{ selectedNodeModDisplay }}
+                        tr
+                            td.info-label Connected edges
+                            td.info-value {{ connectedEdges.length }}
                 div(v-if="connectedEdges.length")
-                    p.text-body-2.mt-2 Connected edges ({{ connectedEdges.length }})
-
+                    v-btn.action-btn.mt-2(block size="small" variant="outlined" @click="downloadConnectedEdges")
+                        v-icon(icon="mdi-download" size="16" class="mr-1")
+                        | Download data
                     div(v-if="histogramBins" style="padding: 10px 0;")
                         p.text-caption.text-medium-emphasis.mb-1 Edge score distribution
                         div(ref="histogramRef")
@@ -819,6 +1035,7 @@ v-row()
 
 .right-panel {
     height: v-bind(panelHeight);
+    background-color: rgb(var(--v-theme-surface));
     overflow-y: auto;
     overflow-x: hidden;
     padding-right: 6px;
@@ -831,7 +1048,7 @@ v-row()
         background: transparent;
     }
     &::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.2);
+        background: rgba(var(--v-theme-on-surface), 0.2);
         border-radius: 2px;
     }
 }
@@ -859,10 +1076,33 @@ v-row()
     flex-shrink: 0;
 }
 .selected-node-title {
-    color: darkblue;
+    color: rgb(var(--v-theme-primary));
     font-weight: 800;
     margin-bottom: 5px;
     margin-top: 10px;
+}
+.node-info-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+
+    tr:nth-child(odd) {
+        background-color: rgba(var(--v-theme-on-surface), 0.04);
+    }
+}
+.info-label {
+    padding: 4px 8px 4px 4px;
+    font-family: "Courier New", monospace;
+    font-weight: 600;
+    color: rgba(var(--v-theme-on-surface), 0.7);
+    white-space: nowrap;
+    vertical-align: top;
+    width: 1%;
+}
+.info-value {
+    padding: 4px 4px 4px 8px;
+    color: rgb(var(--v-theme-on-surface));
+    word-break: break-word;
 }
 .edge-row {
     display: grid;

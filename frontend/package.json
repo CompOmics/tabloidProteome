@@ -17,7 +17,6 @@
         "@cosmos.gl/graph": "^2.6.4",
         "@mdi/font": "^7.4.47",
         "@sigma/export-image": "^3.0.0",
-        "cytoscape": "^3.33.1",
         "d3": "^7.9.0",
         "graphology": "^0.26.0",
         "graphology-layout": "^0.6.1",

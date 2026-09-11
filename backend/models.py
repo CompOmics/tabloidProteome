@@ -16,9 +16,13 @@ class EdgeModel(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     l_node_a_id = Column(Integer, ForeignKey('nodes.id'), index=True, nullable=False)
     l_node_b_id = Column(Integer, ForeignKey('nodes.id'), index=True, nullable=False)
-    score = Column(Float, nullable=True)
-    pval = Column(Float, nullable=True)
-    adj_pval = Column(Float, nullable=True)
+    score = Column(Float, index=True, nullable=True)
+    qvalue = Column(Float, nullable=True)
+    same_protein = Column(Integer, nullable=True)
+    same_site = Column(Integer, nullable=True)
+    position_gap = Column(Integer, nullable=True)
+    same_mod = Column(Integer, nullable=True)
+    shared_peptide = Column(Integer, nullable=True)
 
 
 class NodeModel(Base):

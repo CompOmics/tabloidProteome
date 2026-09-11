@@ -1,7 +1,7 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pathlib import Path
 from utils.socket_utils import connection_manager
 from api.v1 import api_v1_router
@@ -10,6 +10,10 @@ import uvicorn
 app = FastAPI()
 port = 5600
 
+backend_dir = Path(__file__).resolve().parent
+MAINTENANCE_FLAG_PATH = backend_dir / "maintenance.flag"
+MAINTENANCE_PAGE_PATH = backend_dir / "maintenance.html"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,6 +21,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Maintenance mode: when MAINTENANCE_FLAG_PATH exists, every request gets the
+# static maintenance page instead of being routed. Toggle with, e.g.:
+#   docker exec tabloid_proteome_modpa touch /backend/maintenance.flag
+#   docker exec tabloid_proteome_modpa rm /backend/maintenance.flag
+@app.middleware("http")
+async def maintenance_mode(request: Request, call_next):
+    if MAINTENANCE_FLAG_PATH.exists():
+        return HTMLResponse(
+            content=MAINTENANCE_PAGE_PATH.read_text(),
+            status_code=503,
+            headers={"Retry-After": "300"},
+        )
+    return await call_next(request)
 
 @app.get("/tabloidproteome/api")
 def home():

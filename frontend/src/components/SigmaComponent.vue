@@ -433,8 +433,7 @@ const addDataToGraph = () => {
       size: 10,
       label: node.composite_name,
       protein: node.accession,
-      modification: modifications.value.filter((el) => el.l_unimod_id == node.l_unimod_id)[0]
-        .unimod_id,
+      modification: node.unimod_id,
       position: node.position,
       residue: node.residue,
     });
@@ -521,27 +520,26 @@ const setFiltersAttributes = () => {
 const setModifications = async () => {
   dataNodes.value.forEach((node: Node, index: number) => {
     if (index > 0) {
-      if (!modifications.value.includes(node.l_unimod_id)) {
-        modifications.value.push(node.l_unimod_id);
+      if (!modifications.value.includes(node.unimod_id)) {
+        modifications.value.push(node.unimod_id);
       }
     }
   });
-  modifications.value.sort(compareNumbers);
+  modifications.value.sort((a, b) => a.localeCompare(b));
   modifications.value.forEach((value, index) => {
-    const foundUnimod = dataUnimod.value.filter((el) => {
-      return el.l_unimod_id == value;
-    });
-    foundUnimod[0]["title"] =
-      foundUnimod[0].unimod_id + " " + foundUnimod[0].full_name + " " + foundUnimod[0].avg_mass;
-    modifications.value[index] = foundUnimod[0];
+    const foundUnimod = dataUnimod.value.find((el) => el.unimod_id == value);
+    const fullName =
+      foundUnimod?.full_name ?? dataNodes.value.find((node) => node.unimod_id === value)?.full_name;
+    modifications.value[index] = {
+      unimod_id: value,
+      title: foundUnimod
+        ? `${foundUnimod.unimod_id} ${foundUnimod.full_name} ${foundUnimod.avg_mass}`
+        : `${value} ${fullName ?? ""}`,
+    };
   });
 };
 const toggleModifications = () => {
   console.log("modifications vmodel", modificationsVmodel.value);
-};
-
-const compareNumbers = (a: number, b: number) => {
-  return a - b;
 };
 
 const downloadImage = () => {

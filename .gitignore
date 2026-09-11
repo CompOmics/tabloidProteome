@@ -1,6 +1,7 @@
 tabloid-proteome-modpa
 __pycache__
 .env
+.env.crud
 .vite
 .github
 
@@ -20,6 +21,7 @@ dist-ssr
 coverage
 *.local
 docker-compose-db.yml
+backend/maintenance.flag
 
 /cypress/videos/
 /cypress/screenshots/

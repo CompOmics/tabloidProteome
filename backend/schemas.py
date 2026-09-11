@@ -1,8 +1,9 @@
 """Pydantic schemas for CSV-backed resources.
 
 Notes / assumptions:
-- `edges_list.csv` rows are expected as: node_a, node_b, score, pval, adj_pval
-- `modifications_list_1.csv` rows (nodes) are expected to include at least: accession, protein, position, residue, modification
+- MoDPA edges CSV columns: pair_key, Score, qvalue, nodeA, nodeB, protA, posA, resA, unimodA,
+  protB, posB, resB, unimodB, same_protein, same_site, position_gap, same_mod, shared_peptide
+- MoDPA nodes CSV columns: name, UniAcc, Entry, Gene, POS, RES, PTM, UniModID
 - `Unimod_database.csv` rows follow: unimod_id, code_name, full_name, avg_mass, mono_mass, composition, residue, classification, misc_notes_x, misc_notes_y
 
 These schemas are minimal and used for validation/typing when converting CSV rows to structured objects.
@@ -14,17 +15,18 @@ from pydantic import BaseModel, Field
 
 
 class Edge(BaseModel):
-    """Schema for an edge row from `edges_list.csv`.
-
-    Fields map to CSV columns: node_a, node_b, score, pval, adj_pval
-    """
+    """Schema for an edge row from the MoDPA edges CSV."""
     score: float
     l_node_a_id: int
     l_node_b_id: int
     node_a: str
     node_b: str
-    # pval: Optional[float] = None
-    # adj_pval: Optional[float] = None
+    qvalue: Optional[float] = None
+    same_protein: Optional[int] = None
+    same_site: Optional[int] = None
+    position_gap: Optional[int] = None
+    same_mod: Optional[int] = None
+    shared_peptide: Optional[int] = None
 
     model_config = {
         "extra": "ignore",
@@ -41,12 +43,12 @@ class Node(BaseModel):
     gene_name: str
     position: Optional[str] = None
     residue: Optional[str] = None
-    l_unimod_id: int
+    unimod_id: str
+    full_name: Optional[str] = None
 
     model_config = {"extra": "ignore"}
 
 class UnimodDistinct(BaseModel):
-    l_unimod_id: int
     unimod_id: str
     full_name: Optional[str] = None
     avg_mass: Optional[float] = None

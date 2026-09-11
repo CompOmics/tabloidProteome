@@ -19,16 +19,6 @@ const router = createRouter({
             component: () => import("../views/CosmographView.vue"),
         },
         {
-            path: "/cytoscape",
-            name: "cytoscape",
-            component: () => import("../views/CytoscapeView.vue"),
-        },
-        {
-            path: "/d3",
-            name: "d3",
-            component: () => import("../views/D3View.vue"),
-        },
-        {
             path: "/cosmograph",
             name: "cosmograph",
             component: () => import("../views/CosmographView.vue"),

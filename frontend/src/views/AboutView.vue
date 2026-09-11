@@ -3,22 +3,22 @@ import { ref } from "vue";
 
 // Base64 encoded email addresses
 const emails = ref<string[]>([
-  "TGVubmFydC5NYXJ0ZW5zQFVHZW50LmJl", // Lennart.Martens@UGent.be
-  "TmF0YWxpYS5UaWNoc2hlbmtvQFVHZW50LmJl", // Natalia.Tichshenko@UGent.be
-  "RW5yaWNvLk1hc3NpZ25hbmlAVUdlbnQuYmU=", // Enrico.Massignani@UGent.be
+    "TGVubmFydC5NYXJ0ZW5zQFVHZW50LmJl", // Lennart.Martens@UGent.be
+    "TmF0YWxpYS5UaWNoc2hlbmtvQFVHZW50LmJl", // Natalia.Tichshenko@UGent.be
+    "RW5yaWNvLk1hc3NpZ25hbmlAVUdlbnQuYmU=", // Enrico.Massignani@UGent.be
 ]);
 
 const decodeEmail = (encoded: string): string => {
-  try {
-    return atob(encoded);
-  } catch (e) {
-    console.error("Failed to decode email", e);
-    return "";
-  }
+    try {
+        return atob(encoded);
+    } catch (e) {
+        console.error("Failed to decode email", e);
+        return "";
+    }
 };
 
 const displayEmail = (encoded: string): string => {
-  return decodeEmail(encoded);
+    return decodeEmail(encoded);
 };
 </script>
 
@@ -125,6 +125,21 @@ const displayEmail = (encoded: string): string => {
           | ELIXIR Belgium service. Relevant funding acknowledgements and service context are provided through ELIXIR Belgium.
     v-row
       v-col(cols="12" md="10" lg="8" class="mx-auto")
+        h2 Useful links
+
+        p Github repository:
+          a(:href="'https://github.com/CompOmics/tabloidProteome/tree/modpa'" target="_blank")
+            | https://github.com/CompOmics/tabloidProteome/tree/modpa
+        p MoDPA reproducible methodology Github repository:
+          a(:href="'https://github.com/CompOmics/MoDPAv1.0'" target="_blank")
+            | https://github.com/CompOmics/MoDPAv1.0
+
+        p Article preprint:
+          a(:href="'https://www.biorxiv.org/content/10.64898/2026.01.20.700550v1'" target="_blank")
+            | MoDPA: Inferring Modification-dependent Protein Associations from Uniformly Reprocessed Mass Spectrometry
+          
+    v-row
+      v-col(cols="12" md="10" lg="8" class="mx-auto")
         h2 Contact
         v-list(lines="1")
           v-list-item
@@ -141,10 +156,10 @@ const displayEmail = (encoded: string): string => {
 
 <style>
 @media (min-width: 1024px) {
-  .about {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-  }
+    .about {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+    }
 }
 </style>

@@ -5,7 +5,8 @@ export interface Node {
     accession: string
     position: number
     residue: string
-    l_unimod_id: number
+    unimod_id: string
+    full_name: string
 }
 export interface Edge {
     score: number
